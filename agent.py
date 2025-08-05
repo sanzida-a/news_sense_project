@@ -9,16 +9,12 @@ from dotenv import load_dotenv
 from openai import AsyncOpenAI
 from agents import Agent, OpenAIChatCompletionsModel, Runner, function_tool, RunContextWrapper
 import logfire
+import requests
 
-
-
-
-# Initialize logging
-
-logfire.configure()
+logfire_token = os.getenv("LOGFIRE_TOKEN")
+logfire.configure(token=logfire_token)
 logfire.instrument_openai_agents()
 
-# Load environment variables
 load_dotenv()
 
 BASE_URL = os.getenv("BASE_URL")
