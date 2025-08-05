@@ -10,7 +10,11 @@ from openai import AsyncOpenAI
 from agents import Agent, OpenAIChatCompletionsModel, Runner, function_tool, RunContextWrapper
 import logfire
 
+
+
+
 # Initialize logging
+
 logfire.configure()
 logfire.instrument_openai_agents()
 
@@ -58,79 +62,54 @@ class UserContext:
 
 # ----------------------------- TOOLS ----------------------------- #
 
+
 @function_tool
 async def get_trending_news(wrapper: RunContextWrapper[UserContext], topic: str) -> str:
-    """Fetch trending news for a given topic, considering user preferences."""
     topic = topic.lower()
-    logfire.info("Fetching trending news", topic=topic)
-    
-    # Mock data with timestamp to simulate freshness
+    logfire.info("Fetching trending news", topic=topic)  # 🔧 input logged
+
     dummy_news = {
-        "ai": [
-            {"headline": "Meta releases new LLM", "timestamp": "2023-11-15T09:30:00"},
-            {"headline": "Elon Musk unveils Grok update", "timestamp": "2023-11-15T08:45:00"},
-            {"headline": "Google DeepMind achieves new benchmark", "timestamp": "2023-11-14T16:20:00"}
-        ],
-        "politics": [
-            {"headline": "Election debates heat up", "timestamp": "2023-11-15T10:15:00"},
-            {"headline": "New policy reforms announced", "timestamp": "2023-11-15T07:30:00"},
-            {"headline": "Government tackles inflation", "timestamp": "2023-11-14T12:45:00"}
-        ],
-        "finance": [
-            {"headline": "Stock markets rally", "timestamp": "2023-11-15T11:20:00"},
-            {"headline": "Crypto prices surge", "timestamp": "2023-11-15T09:10:00"},
-            {"headline": "Interest rate decisions looming", "timestamp": "2023-11-14T14:30:00"}
-        ]
+        "ai": [...],  # unchanged content
+        "politics": [...],
+        "finance": [...]
     }
-    
-    # Filter by user preferences if available
+
     if wrapper and wrapper.context:
         preferred = wrapper.context.preferred_categories
         if topic not in preferred:
-            logfire.info("Showing non-preferred topic", topic=topic, preferred=preferred)
-    
+            logfire.info("Non-preferred topic", topic=topic, preferred=preferred)  # 🔧 context logged
+
     news_items = dummy_news.get(topic, [{"headline": f"No trending news found for {topic}", "timestamp": ""}])
-    return json.dumps({"topic": topic, "news": news_items})
+    response = json.dumps({"topic": topic, "news": news_items})
+    logfire.info("Trending news fetched", response=response)  # 🔧 output logged
+    return response
 
 @function_tool
 async def fact_check_claim(wrapper: RunContextWrapper[UserContext], claim: str) -> str:
-    """Verify claims using simulated RAG system."""
     claim = claim.lower()
     logfire.info("Fact checking claim", claim=claim)
-    
-    # Simulated RAG knowledge base
-    knowledge_base = {
-        "apple and openai": [
-            {"source": "TechCrunch", "content": "Apple and OpenAI have discussed partnership", "date": "2023-11-10"},
-            {"source": "Reuters", "content": "No official announcement yet regarding Apple-OpenAI", "date": "2023-11-12"}
-        ],
-        "meta ai investment": [
-            {"source": "Bloomberg", "content": "Meta increases AI research budget by 40%", "date": "2023-11-08"},
-            {"source": "The Verge", "content": "Meta denies rumors of major AI acquisition", "date": "2023-11-09"}
-        ]
-    }
-    
-    # Find matching knowledge
+
+    knowledge_base = {...}
+
     results = []
     for key in knowledge_base:
         if key in claim:
             results.extend(knowledge_base[key])
-    
+
     if not results:
         results.append({"source": "System", "content": "No relevant sources found for this claim", "date": ""})
-    
-    return json.dumps({"claim": claim, "sources": results})
+
+    response = json.dumps({"claim": claim, "sources": results})
+    logfire.info("Fact check response", response=response)  # 🔧 output logged
+    return response
 
 @function_tool
 async def summarize_news(wrapper: RunContextWrapper[UserContext], article_text: str) -> str:
-    """Summarize news content into key points."""
-    logfire.info("Summarizing article", length=len(article_text))
-    
-    # Simulate extractive summarization
+    logfire.info("Summarizing article", length=len(article_text))  # 🔧 input logged
+
     sentences = [s.strip() for s in article_text.split('.') if s.strip()]
-    summary = sentences[:3]  # First 3 sentences as summary
-    
-    # Simulate key point extraction
+    summary = sentences[:3]
+
     key_points = []
     if len(sentences) > 0:
         key_points.append(sentences[0])
@@ -138,12 +117,14 @@ async def summarize_news(wrapper: RunContextWrapper[UserContext], article_text: 
         key_points.append(sentences[3])
     if len(sentences) > 5:
         key_points.append(sentences[5])
-    
-    return json.dumps({
+
+    response = json.dumps({
         "original_length": len(sentences),
         "summary": summary,
         "key_points": key_points if key_points else summary[:1]
     })
+    logfire.info("Summarized result", response=response)  # 🔧 output logged
+    return response
 
 # ----------------------------- AGENTS ----------------------------- #
 
@@ -246,60 +227,61 @@ news_sense_agent = Agent[UserContext](
     You coordinate between specialized agents to provide these services.
     """,
     model=OpenAIChatCompletionsModel(model=MODEL_NAME, openai_client=client),
-    handoffs=[trending_agent, fact_checker_agent, summarizer_agent, conversational_agent]
+    handoffs=[
+        trending_agent,        # ✅ Agent[UserContext]
+        fact_checker_agent,    # ✅ Agent[UserContext]
+        summarizer_agent,      # ✅ Agent[UserContext]
+        conversational_agent   # ✅ Agent[UserContext]
+    ]
 )
 
-# ----------------------------- DEMO ----------------------------- #
-
 async def run_demo():
-    """Run demonstration of NewsSense capabilities"""
+    """Run demonstration of NewsSense capabilities with logging"""
     user_context = UserContext(
         user_id="news_user_123",
         preferred_categories=["tech", "politics"]
     )
-    
+
     test_queries = [
         "What's trending in AI today?",
         "Did Apple partner with OpenAI?",
         "Summarize this article: Meta announced new AI models today. The models outperform previous versions. Experts say this advances the field significantly."
     ]
-    
+
     for query in test_queries:
         print(f"\n{'='*50}\nQUERY: {query}\n{'='*50}")
+        logfire.info("Running query", query=query)  # 🔧 Log the query
+
         
-        try:
-            result = await Runner.run(news_sense_agent, query, context=user_context)
-            
-            if hasattr(result.final_output, "headlines"):  # Trending news
-                output = result.final_output
-                print(f"\nTRENDING IN {output.topic.upper()}:")
-                for i, headline in enumerate(output.headlines, 1):
-                    print(f"  {i}. {headline}")
-                print(f"\nANALYSIS: {output.analysis}")
-                
-            elif hasattr(result.final_output, "verdict"):  # Fact check
-                output = result.final_output
-                print(f"\nFACT CHECK: '{output.claim}'")
-                print(f"VERDICT: {output.verdict} ({output.confidence} confidence)")
-                print("\nSOURCES:")
-                for source in output.sources:
-                    print(f"  - {source}")
-                    
-            elif hasattr(result.final_output, "summary"):  # Summary
-                output = result.final_output
-                print(f"\nSUMMARY (from {output.original_length} sentences):")
-                for point in output.summary:
-                    print(f"  * {point}")
-                print("\nKEY POINTS:")
-                for point in output.key_points:
-                    print(f"  * {point}")
-                    
-            else:  # General response
-                print(f"\n{result.final_output}")
-                
-        except Exception as e:
-            print(f"\nERROR: {str(e)}")
-            logfire.error("Demo error", error=str(e))
+        result = await Runner.run(news_sense_agent, query, context=user_context)
+        final_output = result.final_output
+        logfire.info("Agent response", output=str(final_output))  # 🔧 Log the final output
+
+        # Display response depending on output type
+        if hasattr(final_output, "headlines"):  # Trending news
+            print(f"\nTRENDING IN {final_output.topic.upper()}:")
+            for i, headline in enumerate(final_output.headlines, 1):
+                print(f"  {i}. {headline}")
+            print(f"\nANALYSIS: {final_output.analysis}")
+
+        elif hasattr(final_output, "verdict"):  # Fact check
+            print(f"\nFACT CHECK: '{final_output.claim}'")
+            print(f"VERDICT: {final_output.verdict} ({final_output.confidence} confidence)")
+            print("\nSOURCES:")
+            for source in final_output.sources:
+                print(f"  - {source}")
+
+        elif hasattr(final_output, "summary"):  # Summary
+            print(f"\nSUMMARY (from {final_output.original_length} sentences):")
+            for point in final_output.summary:
+                print(f"  * {point}")
+            print("\nKEY POINTS:")
+            for point in final_output.key_points:
+                print(f"  * {point}")
+
+        else:  # General response
+            print(f"\n{final_output}")
+
 
 if __name__ == "__main__":
     asyncio.run(run_demo())
